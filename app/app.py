@@ -1,4 +1,5 @@
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,6 +8,16 @@ import plotly.express as px
 import hopsworks
 import joblib
 from datetime import datetime, timedelta
+
+def get_secret(key):
+    """Read from Replit Secrets (env vars) first, then fall back to st.secrets."""
+    value = os.environ.get(key)
+    if value:
+        return value
+    try:
+        return st.secrets[key]
+    except Exception:
+        return None
 
 st.set_page_config(
     page_title="🌫️ AQI Predictor",
@@ -35,8 +46,8 @@ def get_aqi_category(aqi_val):
 def load_model_and_data():
     """Load model from Hopsworks (cached for 1 hour)."""
     project = hopsworks.login(
-        project=st.secrets["HOPSWORKS_PROJECT"],
-        api_key_value=st.secrets["HOPSWORKS_API_KEY"],
+        project=get_secret("HOPSWORKS_PROJECT"),
+        api_key_value=get_secret("HOPSWORKS_API_KEY"),
     )
     mr = project.get_model_registry()
     model_meta = mr.get_model("aqi_forecaster", version=1)
