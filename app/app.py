@@ -11,11 +11,12 @@ from datetime import datetime, timedelta
 
 def get_secret(key):
     """Read from Replit Secrets (env vars) first, then fall back to st.secrets."""
-    value = os.environ.get(key)
+    value = os.environ.get(key, "").strip()
     if value:
         return value
     try:
-        return st.secrets[key]
+        value = st.secrets.get(key, "").strip()
+        return value if value else None
     except Exception:
         return None
 
@@ -51,6 +52,12 @@ def load_model_and_data():
     )
     mr = project.get_model_registry()
     model_meta = mr.get_model("aqi_forecaster", version=1)
+    if model_meta is None:
+        raise RuntimeError(
+            "No model named **aqi_forecaster** found in your Hopsworks Model Registry. "
+            "Please run the training pipeline first (`pipelines/training_pipeline.py`) "
+            "to train and register a model."
+        )
     model_dir  = model_meta.download()
     forecaster = joblib.load(f"{model_dir}/best_aqi_forecaster.pkl")
 
@@ -158,5 +165,21 @@ try:
     st.plotly_chart(bar_fig, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Error loading data: {e}")
-    st.info("Make sure your HOPSWORKS_API_KEY is set in .streamlit/secrets.toml")
+    project_set = bool(get_secret("HOPSWORKS_PROJECT"))
+    api_key_set = bool(get_secret("HOPSWORKS_API_KEY"))
+    if not project_set or not api_key_set:
+        missing = []
+        if not project_set:
+            missing.append("`HOPSWORKS_PROJECT`")
+        if not api_key_set:
+            missing.append("`HOPSWORKS_API_KEY`")
+        st.warning(
+            f"⚙️ **Setup required** — the following secrets are not set: {', '.join(missing)}.\n\n"
+            "**How to fix:**\n"
+            "1. Open the 🔒 **Secrets** tab in the Replit sidebar\n"
+            "2. Add `HOPSWORKS_PROJECT` (your Hopsworks project name)\n"
+            "3. Add `HOPSWORKS_API_KEY` (from app.hopsworks.ai → avatar → Settings → API Keys)\n"
+            "4. Restart the app"
+        )
+    else:
+        st.error(f"❌ Error connecting to Hopsworks: {e}")
