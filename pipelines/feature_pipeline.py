@@ -138,6 +138,20 @@ def store_features(df: pd.DataFrame):
     )
     fs = project.get_feature_store()
 
+    # Ensure lag/rolling/target columns exist (NaN for single live rows)
+    lag_rolling_cols = (
+        [f"aqi_lag_{l}h"  for l in [1,2,3,6,12,24]] +
+        [f"pm25_lag_{l}h" for l in [1,2,3,6,12,24]] +
+        [f"aqi_roll_mean_{w}h" for w in [3,6,12,24]] +
+        [f"aqi_roll_std_{w}h"  for w in [3,6,12,24]] +
+        [f"aqi_roll_max_{w}h"  for w in [3,6,12,24]] +
+        ["aqi_change_1h", "aqi_change_3h", "aqi_change_24h",
+         "target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
+    )
+    for col in lag_rolling_cols:
+        if col not in df.columns:
+            df[col] = float("nan")
+
     fg = fs.get_or_create_feature_group(
         name="aqi_features",
         version=1,

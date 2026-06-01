@@ -67,6 +67,18 @@ def backfill(days_back: int = 90):
     df = pd.DataFrame(rows)
     df = df.sort_values("timestamp").reset_index(drop=True)
 
+    # Add missing weather columns as NaN (historical API doesn't provide them)
+    for col in [
+        "temperature", "humidity", "wind_speed", "wind_deg", "pressure",
+        "visibility", "cloud_cover",
+        "hour_sin", "hour_cos", "month_sin", "month_cos", "dow_sin", "dow_cos",
+        "wind_u", "wind_v",
+        "weather_clear", "weather_clouds", "weather_rain",
+        "weather_haze", "weather_fog", "weather_smoke", "weather_dust",
+    ]:
+        df[col] = float("nan")
+    df["weather_main"] = ""
+
     # Compute lag/rolling features now that we have history
     from feature_pipeline import compute_lag_and_rolling_features
     df = compute_lag_and_rolling_features(df)
