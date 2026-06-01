@@ -12,7 +12,7 @@ torch>=2.0.0
 torchvision
 
 # Feature Store
-hopsworks==4.7.*
+hopsworks[python]==4.7.*
 
 # Explainability
 shap>=0.43.0
