@@ -108,9 +108,11 @@ try:
     st.divider()
 
     # ── 3-Day Forecast ────────────────────────────────────────────────────────
-    drop_cols    = ["timestamp", "target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
+    drop_cols    = ["timestamp", "weather_main", "target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
     feature_cols = [c for c in df.columns if c not in drop_cols]
-    X_latest     = df[feature_cols].iloc[[-1]].values
+    X_df = df[feature_cols].copy()
+    X_df = X_df.fillna(X_df.median(numeric_only=True)).fillna(0)
+    X_latest     = X_df.iloc[[-1]].values
 
     predictions = forecaster.predict(X_latest)
     forecast_dates = [
@@ -124,7 +126,7 @@ try:
     for i, (col, h, date) in enumerate(zip(
         [fcol1, fcol2, fcol3], [24, 48, 72], forecast_dates
     )):
-        pred_val = int(predictions[h])
+        pred_val = int(np.asarray(predictions[h]).flat[0])
         lbl, clr = get_aqi_category(pred_val)
         with col:
             st.markdown(

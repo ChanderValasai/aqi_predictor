@@ -25,12 +25,18 @@ def run_training():
     # ── 2. Fetch Training Data ───────────────────────────────────────────────
     fg = fs.get_feature_group("aqi_features", version=1)
     df = fg.read()
-    df = df.sort_values("timestamp").dropna()
+    df = df.sort_values("timestamp")
 
     # Define features and multi-horizon targets
     target_cols = ["target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
-    drop_cols   = ["timestamp"] + target_cols
+    drop_cols   = ["timestamp", "weather_main"] + target_cols
     feature_cols = [c for c in df.columns if c not in drop_cols]
+
+    # Only drop rows where targets or core numeric features are missing
+    required_cols = target_cols + ["aqi", "pm25", "aqi_lag_1h", "aqi_roll_mean_3h"]
+    df = df.dropna(subset=required_cols)
+    # Fill remaining NaNs (e.g. weather cols) with column medians, then 0 for all-NaN cols
+    df[feature_cols] = df[feature_cols].fillna(df[feature_cols].median(numeric_only=True)).fillna(0)
 
     X = df[feature_cols].values
     y = {

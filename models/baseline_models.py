@@ -106,7 +106,6 @@ def build_xgboost():
         min_child_weight=5,
         reg_alpha=0.1,           # L1 regularization
         reg_lambda=1.0,          # L2 regularization
-        early_stopping_rounds=50,
         eval_metric="rmse",
         random_state=42,
         n_jobs=-1,

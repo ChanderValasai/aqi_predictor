@@ -40,12 +40,26 @@ def explain_with_shap(model, X_train, X_test, feature_names, model_type="tree"):
     Generate SHAP values and summary plot.
     model_type: 'tree' for RF/XGBoost, 'linear' for Ridge, 'kernel' for DL
     """
-    if model_type == "tree":
-        explainer = shap.TreeExplainer(model)
-    elif model_type == "linear":
-        explainer = shap.LinearExplainer(model, X_train)
-    else:
-        explainer = shap.KernelExplainer(model.predict, shap.sample(X_train, 100))
+    from sklearn.pipeline import Pipeline
+    from sklearn.linear_model import Ridge, Lasso, ElasticNet
+    from xgboost import XGBRegressor
+    from lightgbm import LGBMRegressor
+    from sklearn.ensemble import RandomForestRegressor
+
+    # Unwrap Pipeline to get the actual estimator
+    inner = model.steps[-1][1] if isinstance(model, Pipeline) else model
+
+    try:
+        if isinstance(inner, (XGBRegressor, LGBMRegressor, RandomForestRegressor)):
+            explainer = shap.TreeExplainer(inner)
+        elif isinstance(inner, (Ridge, Lasso, ElasticNet)):
+            # LinearExplainer needs the masker/background data
+            explainer = shap.LinearExplainer(inner, X_train if not isinstance(model, Pipeline) else model[:-1].transform(X_train))
+            X_test = X_test if not isinstance(model, Pipeline) else model[:-1].transform(X_test)
+        else:
+            explainer = shap.KernelExplainer(model.predict, shap.sample(X_train, 50))
+    except Exception:
+        explainer = shap.KernelExplainer(model.predict, shap.sample(X_train, 50))
 
     shap_values = explainer.shap_values(X_test)
 
@@ -68,7 +82,9 @@ def explain_with_shap(model, X_train, X_test, feature_names, model_type="tree"):
 # ─── MODEL PERSISTENCE ───────────────────────────────────────────────────────
 
 def save_model(model, path: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     joblib.dump(model, path)
     print(f"💾 Model saved → {path}")
 
