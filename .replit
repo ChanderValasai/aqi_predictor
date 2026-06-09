@@ -27,12 +27,16 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PYTHONPATH=models:pipelines LD_LIBRARY_PATH=$(gcc --print-file-name=libgomp.so.1 | xargs dirname):$LD_LIBRARY_PATH streamlit run app/app.py"
+args = "PYTHONPATH=models:pipelines LD_LIBRARY_PATH=$(gcc --print-file-name=libgomp.so.1 | xargs dirname):$LD_LIBRARY_PATH streamlit run app/app.py --server.port=5000 --server.address=0.0.0.0"
 waitForPort = 5000
 
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 8501
+externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"

@@ -76,6 +76,10 @@ def explain_with_shap(model, X_train, X_test, feature_names, model_type="tree"):
     plt.savefig("shap_beeswarm.png", dpi=150)
     plt.close()
 
+    # Also save SHAP values to JSON for dashboard consumption
+    shap_df = pd.DataFrame(shap_values, columns=feature_names)
+    shap_df.to_json("shap_values.json", orient="split")
+
     return shap_values
 
 
