@@ -31,7 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ───────────────────────────────────────────��────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  SECRETS
 # ────────────────────────────────────────────────────────────────────────────
 def get_secret(key):
@@ -72,6 +72,41 @@ def get_aqi_category(aqi_val):
         if lo <= aqi_val <= hi:
             return label, color
     return "Hazardous", "#7e0023"
+
+
+# ─────────────────────��──────────────────────────────────────────────────────
+#  FEATURE ENGINEERING (must match training_pipeline.py exactly)
+# ────────────────────────────────────────────────────────────────────────────
+def engineer_features(df):
+    """
+    Recompute lag, rolling, and change features from the full time series.
+    This exactly matches the feature engineering in training_pipeline.py.
+    """
+    df = df.copy()
+    
+    # Lags
+    for lag in [1, 2, 3, 6, 12, 24]:
+        df[f"aqi_lag_{lag}h"]  = df["aqi"].shift(lag)
+        df[f"pm25_lag_{lag}h"] = df["pm25"].shift(lag)
+    
+    # Rolling statistics (shift(1) avoids leaking current value)
+    for window in [3, 6, 12, 24]:
+        rolled = df["aqi"].shift(1).rolling(window)
+        df[f"aqi_roll_mean_{window}h"] = rolled.mean()
+        df[f"aqi_roll_std_{window}h"]  = rolled.std()
+        df[f"aqi_roll_max_{window}h"]  = rolled.max()
+    
+    # Changes
+    df["aqi_change_1h"]  = df["aqi"].diff(1)
+    df["aqi_change_3h"]  = df["aqi"].diff(3)
+    df["aqi_change_24h"] = df["aqi"].diff(24)
+    
+    # Targets (for reference; will be dropped from features)
+    df["target_aqi_24h"] = df["aqi"].shift(-24)
+    df["target_aqi_48h"] = df["aqi"].shift(-48)
+    df["target_aqi_72h"] = df["aqi"].shift(-72)
+    
+    return df
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -124,13 +159,13 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ────────────────────────────────────────────────────────────────────────────
 #  TAB 1 — LIVE DASHBOARD
-# ─────────────���──────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 with tab1:
     try:
         forecaster, df = load_model_and_data()
         df = df.tail(2000)  # last 2000 hours for display
 
-        # ── Current AQI + City Details ──────────────────────────────────────
+        # ── Current AQI + City Details ────────────────��─────────────────────
         current_aqi = int(df["aqi"].iloc[-1])
         label, color = get_aqi_category(current_aqi)
 
@@ -184,18 +219,26 @@ with tab1:
         # ── 3-Day Forecast ──────────────────────────────────────────────────
         st.markdown("## 📅 3-Day AQI Forecast")
         try:
+            # Engineer features (match training pipeline exactly)
+            df_engineered = engineer_features(df)
+            
+            # Select features (drop targets and non-predictive columns)
             drop_cols = [
                 "timestamp", "weather_main",
                 "target_aqi_24h", "target_aqi_48h", "target_aqi_72h",
             ]
-            feature_cols = [c for c in df.columns if c not in drop_cols]
-            X_df = df[feature_cols].copy()
+            feature_cols = [c for c in df_engineered.columns if c not in drop_cols]
+            
+            # Use the model's expected features (it has feature_names from training)
+            if forecaster.feature_names is not None:
+                # Ensure we only use features the model knows about
+                feature_cols = [c for c in forecaster.feature_names if c in df_engineered.columns]
+            
+            X_df = df_engineered[feature_cols].copy()
             X_df = X_df.fillna(X_df.median(numeric_only=True)).fillna(0)
             X_latest = X_df.iloc[[-1]].values
 
-            # Debug: Log prediction structure
             predictions = forecaster.predict(X_latest)
-            st.write(f"Debug - Predictions type: {type(predictions)}, Content: {predictions}")
             
             now = datetime.now()
             forecast_dates = [
@@ -206,7 +249,7 @@ with tab1:
 
             fc1, fc2, fc3 = st.columns(3)
             
-            # Fix: Handle predictions dictionary with integer keys
+            # Handle predictions dictionary with integer keys
             pred_values = []
             if isinstance(predictions, dict):
                 # Dictionary with integer keys: {24: array, 48: array, 72: array}
@@ -413,7 +456,7 @@ with tab3:
         {"Model": "Ridge", "Horizon": "+24h", "RMSE": 34.72, "MAE": 26.88, "R²": 0.0625, "MAPE": 22.43},
         {"Model": "RandomForest", "Horizon": "+24h", "RMSE": 35.98, "MAE": 28.14, "R²": -0.0066, "MAPE": 24.36},
         {"Model": "XGBoost", "Horizon": "+24h", "RMSE": 33.69, "MAE": 25.88, "R²": 0.1174, "MAPE": 23.02},
-        {"Model": "LightGBM", "Horizon": "+24h", "RMSE": 34.02, "MAE": 26.53, "R��": 0.1001, "MAPE": 23.51},
+        {"Model": "LightGBM", "Horizon": "+24h", "RMSE": 34.02, "MAE": 26.53, "R²": 0.1001, "MAPE": 23.51},
         # +48h
         {"Model": "Ridge", "Horizon": "+48h", "RMSE": 38.03, "MAE": 30.13, "R²": -0.1263, "MAPE": 27.19},
         {"Model": "RandomForest", "Horizon": "+48h", "RMSE": 41.09, "MAE": 32.28, "R²": -0.3148, "MAPE": 30.65},
