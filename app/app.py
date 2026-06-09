@@ -74,7 +74,7 @@ def get_aqi_category(aqi_val):
     return "Hazardous", "#7e0023"
 
 
-# ─────────────────────��──────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  FEATURE ENGINEERING (must match training_pipeline.py exactly)
 # ────────────────────────────────────────────────────────────────────────────
 def engineer_features(df):
@@ -165,7 +165,7 @@ with tab1:
         forecaster, df = load_model_and_data()
         df = df.tail(2000)  # last 2000 hours for display
 
-        # ── Current AQI + City Details ────────────────��─────────────────────
+        # ── Current AQI + City Details ──────────────────────────────────────
         current_aqi = int(df["aqi"].iloc[-1])
         label, color = get_aqi_category(current_aqi)
 
