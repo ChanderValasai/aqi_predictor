@@ -1,175 +1,218 @@
-# AQI Predictor
+# 🌫️ AQI Predictor
 
-A machine learning project for predicting Air Quality Index (AQI) values based on environmental and meteorological data.
+A machine learning-powered **3-day Air Quality Index (AQI) forecasting system** with a Streamlit dashboard, integrated with Hopsworks feature store and model registry for end-to-end MLOps.
 
-## Project Description
+## 🎯 What This Project Does
 
-This project develops and implements machine learning models to predict Air Quality Index (AQI) values. AQI is a standardized measure used to communicate to the public how polluted the air currently is or how polluted it is forecast to become. The predictor uses historical data and environmental factors to forecast AQI levels, helping users understand air quality conditions and plan accordingly.
+This project predicts air quality for the next 72 hours using:
+- **Real-time data pipelines** that fetch environmental and weather data
+- **ML models** (XGBoost, LightGBM, Deep Learning) trained on historical AQI patterns
+- **Feature engineering** with Hopsworks Feature Store for versioning and lineage
+- **Interactive Streamlit dashboard** showing current AQI, 3-day forecasts, and pollutant breakdowns
+- **SHAP explainability** to understand which factors influence AQI predictions
 
-## Features
+## 🚀 Features
 
-- **Multi-factor AQI Prediction** - Predicts AQI based on multiple environmental parameters
-- **Machine Learning Models** - Implements various ML algorithms for accurate predictions
-- **Data Processing** - Comprehensive data cleaning and feature engineering
-- **Model Evaluation** - Detailed metrics and performance analysis
-- **Easy to Use** - Simple interface for making AQI predictions
-- **Scalable** - Can handle large datasets and multiple locations
+- **3-Day Forecast**: Predict AQI values for 24h, 48h, and 72h ahead
+- **Real-time Dashboard**: Streamlit web app with current conditions and colored AQI alerts
+- **Hazard Alerts**: Warnings when AQI exceeds unhealthy thresholds
+- **Pollutant Breakdown**: Visualize PM2.5, PM10, O₃, NO₂, SO₂, CO levels
+- **Model Explainability**: SHAP beeswarm and summary plots to understand predictions
+- **Feature Store Integration**: Hopsworks for data versioning, feature management, and model registry
+- **Automated Pipelines**: Training, feature engineering, and backfill jobs
 
-## Installation
+## 📊 Dashboard Features
 
-### Requirements
-- Python 3.7 or higher
-- pip (Python package manager)
+The Streamlit app (`app/app.py`) includes:
+- **Current AQI Metric** with color-coded air quality status
+- **Pollutant Readings** (PM2.5, PM10, Temperature, etc.)
+- **3-Day AQI Forecast** with color-coded predictions
+- **Historical AQI Chart** (last 7 days with health thresholds)
+- **Pollutant Bar Chart** showing current concentrations
+- **Auto-alerts** for hazardous conditions
 
-### Setup
+## 🏗️ Project Structure
 
-1. Clone the repository:
+```
+aqi_predictor/
+├── app/
+│   └── app.py                      # Streamlit dashboard application
+├── pipelines/
+│   ├── training_pipeline.py        # ML model training & registration
+│   ├── feature_pipeline.py         # Real-time feature engineering
+│   └── backfill.py                 # Historical data backfill
+├── models/                         # Trained model artifacts
+├── best_aqi_forecaster.pkl         # Serialized forecaster model
+├── shap_summary.png                # Model explainability visualizations
+├── shap_beeswarm.png
+├── requirements.txt
+├── run.sh                          # Script runner for pipelines
+└── README.md
+```
+
+## 🛠️ Tech Stack
+
+### ML & Data
+- **scikit-learn**, **XGBoost**, **LightGBM** - Gradient boosting models
+- **TensorFlow/PyTorch** - Deep learning models
+- **pandas**, **numpy** - Data manipulation
+- **scipy**, **statsmodels** - Statistical analysis
+
+### MLOps & Feature Management
+- **Hopsworks** - Feature store, model registry, data versioning
+- **joblib** - Model serialization
+
+### Visualization & Explainability
+- **Streamlit** - Interactive web dashboard
+- **Plotly** - Interactive charts
+- **SHAP** - Model explainability
+- **LIME** - Local interpretable explanations
+
+### Utilities
+- **python-dotenv** - Environment configuration
+- **schedule** - Job scheduling
+- **requests** - API calls
+
+## 📋 Prerequisites
+
+- Python 3.8+
+- **Hopsworks Account** (free tier at [app.hopsworks.ai](https://app.hopsworks.ai))
+- API credentials for weather/AQI data (if fetching real-time data)
+
+## ⚙️ Setup & Installation
+
+### 1. Clone the repository
 ```bash
 git clone https://github.com/ChanderValasai/aqi_predictor.git
 cd aqi_predictor
 ```
 
-2. Create a virtual environment (recommended):
+### 2. Create a virtual environment
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install required dependencies:
+### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
-
-### Basic Usage
-
-```python
-from aqi_predictor import AQIPredictor
-
-# Initialize the predictor
-predictor = AQIPredictor()
-
-# Make a prediction
-aqi_value = predictor.predict(
-    temperature=25,
-    humidity=60,
-    wind_speed=5,
-    pm25=45,
-    pm10=80,
-    no2=50,
-    so2=20,
-    co=0.8
-)
-
-print(f"Predicted AQI: {aqi_value}")
+### 4. Configure Hopsworks credentials
+Create a `.env` file (or set environment variables):
+```
+HOPSWORKS_PROJECT=your_project_name
+HOPSWORKS_API_KEY=your_api_key
 ```
 
-### Advanced Usage
+You can get your API key from [app.hopsworks.ai](https://app.hopsworks.ai) → Avatar → Settings → API Keys.
 
-```python
-# Load custom data
-from aqi_predictor import AQIPredictor
-import pandas as pd
+## 🎮 Running the Pipelines
 
-predictor = AQIPredictor(model_path='path/to/model')
-data = pd.read_csv('data.csv')
-predictions = predictor.predict_batch(data)
-```
+Use the `run.sh` script to execute different pipeline stages:
 
-## Dataset
-
-The project uses environmental and meteorological data including:
-- **Temperature** - Ambient air temperature
-- **Humidity** - Relative humidity levels
-- **Wind Speed** - Wind velocity
-- **Particulate Matter (PM2.5, PM10)** - Fine and coarse particles
-- **Nitrogen Dioxide (NO2)** - Nitrogen oxide levels
-- **Sulfur Dioxide (SO2)** - Sulfur oxide levels
-- **Carbon Monoxide (CO)** - Carbon monoxide concentrations
-
-## Model Information
-
-The project implements machine learning models for AQI prediction:
-- **Algorithm Types** - Regression models for continuous AQI value prediction
-- **Training Data** - Historical AQI and environmental measurements
-- **Feature Engineering** - Derived features from raw environmental data
-- **Model Optimization** - Hyperparameter tuning and cross-validation
-
-## Project Structure
-
-```
-aqi_predictor/
-├── README.md
-├── requirements.txt
-├── data/
-│   ├── raw/              # Raw data files
-│   └── processed/        # Processed data
-├── models/               # Trained model files
-├── src/
-│   ├── predictor.py      # Main predictor class
-│   ├── data_processing.py # Data preprocessing
-│   ├── model_training.py  # Model training
-│   └── utils.py          # Utility functions
-├── notebooks/            # Jupyter notebooks for analysis
-└── tests/                # Unit tests
-```
-
-## Requirements
-
-Key Python dependencies:
-- pandas - Data manipulation
-- numpy - Numerical computations
-- scikit-learn - Machine learning algorithms
-- matplotlib - Data visualization
-- jupyter - Interactive notebooks
-
-Install all requirements:
 ```bash
-pip install -r requirements.txt
+# Train models and register to Hopsworks Model Registry
+bash run.sh training
+
+# Run live feature engineering (fetches latest data)
+bash run.sh feature
+
+# Backfill historical data into feature store
+bash run.sh backfill
 ```
 
-## Configuration
+## 📊 Running the Dashboard
 
-Create a `config.py` file to customize settings:
-
-```python
-# Model configuration
-MODEL_PATH = 'models/aqi_model.pkl'
-DATA_PATH = 'data/'
-
-# Prediction parameters
-MIN_AQI = 0
-MAX_AQI = 500
-
-# Feature scaling
-NORMALIZE_FEATURES = True
+```bash
+streamlit run app/app.py
 ```
 
-## Results/Performance
+The dashboard will open at `http://localhost:8501`.
 
-### Model Performance Metrics
+## 🎨 AQI Categories & Colors
 
+| AQI Range | Category | Color | Health Impact |
+|-----------|----------|-------|---------------|
+| 0–50 | Good | 🟢 Green | Minimal impact |
+| 51–100 | Moderate | 🟡 Yellow | Acceptable |
+| 101–150 | Unhealthy for Sensitive Groups | 🟠 Orange | Sensitive groups may experience effects |
+| 151–200 | Unhealthy | 🔴 Red | General public may experience effects |
+| 201–300 | Very Unhealthy | 🟣 Purple | Health alert; serious effects |
+| 301–500 | Hazardous | 🟤 Dark Red | Emergency conditions |
+
+## 📈 Model Performance
+
+The trained forecaster achieves:
 - **Mean Absolute Error (MAE)**: ~8-12 AQI points
 - **Root Mean Squared Error (RMSE)**: ~12-15 AQI points
 - **R² Score**: 0.85-0.92
 - **Prediction Accuracy**: 85-90% within acceptable range
 
-### Sample Predictions
+## 🔍 Model Explainability
 
-| Input Parameters | Predicted AQI | AQI Category |
-|---|---|---|
-| Moderate pollution | 145 | Unhealthy for Sensitive Groups |
-| Low pollution | 35 | Good |
-| High pollution | 280 | Very Unhealthy |
+SHAP analysis is included to show:
+- Feature importance for AQI predictions
+- Which environmental factors most influence air quality
+- How each factor affects the forecast
 
-## License
+See `shap_summary.png` and `shap_beeswarm.png` for visualizations.
+
+## 📝 Usage Example
+
+```python
+import joblib
+import pandas as pd
+
+# Load the trained model
+forecaster = joblib.load('best_aqi_forecaster.pkl')
+
+# Prepare features (example data)
+features = pd.DataFrame({
+    'pm25': [45.0],
+    'pm10': [80.0],
+    'temperature': [25.0],
+    'humidity': [60.0],
+    # ... other features
+})
+
+# Make predictions for 24h, 48h, 72h
+predictions = forecaster.predict(features)
+print(f"24h forecast: {predictions[24]}")
+print(f"48h forecast: {predictions[48]}")
+print(f"72h forecast: {predictions[72]}")
+```
+
+## 🐛 Troubleshooting
+
+### Hopsworks Connection Error
+- Verify `HOPSWORKS_PROJECT` and `HOPSWORKS_API_KEY` are set correctly
+- Check Hopsworks credentials at [app.hopsworks.ai](https://app.hopsworks.ai)
+- Ensure your API key hasn't expired
+
+### Missing Model in Registry
+- Run the training pipeline first: `bash run.sh training`
+- Verify the model was registered as `aqi_forecaster` version 1 in Hopsworks
+
+### Data Pipeline Issues
+- Check network connectivity for fetching weather/AQI data
+- Verify feature store access in Hopsworks
+- Review pipeline logs for API errors
+
+## 📚 Learning Resources
+
+- [Hopsworks Documentation](https://docs.hopsworks.ai/)
+- [Streamlit Documentation](https://docs.streamlit.io/)
+- [XGBoost Documentation](https://xgboost.readthedocs.io/)
+- [SHAP Documentation](https://shap.readthedocs.io/)
+
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Authors/Contributors
+## 👤 Author
 
-- **Chander Valasai** - Project Creator and Lead Developer
+**Chander Valasai** - Project Creator and Lead Developer
 
 ---
 
