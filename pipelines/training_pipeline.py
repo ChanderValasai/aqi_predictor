@@ -1,4 +1,31 @@
 import os
+import sys
+import subprocess
+
+# ── libgomp auto-fix (LightGBM needs it; re-exec with LD_LIBRARY_PATH if missing) ──
+def _ensure_libgomp():
+    try:
+        import ctypes
+        ctypes.cdll.LoadLibrary("libgomp.so.1")
+    except OSError:
+        result = subprocess.run(
+            ["gcc", "--print-file-name=libgomp.so.1"],
+            capture_output=True, text=True
+        )
+        gomp_dir = os.path.dirname(result.stdout.strip())
+        current = os.environ.get("LD_LIBRARY_PATH", "")
+        if gomp_dir not in current:
+            os.environ["LD_LIBRARY_PATH"] = f"{gomp_dir}:{current}"
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+_ensure_libgomp()
+
+# ── sys.path: allow running as `python pipelines/training_pipeline.py` ──────────
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (os.path.join(_repo_root, "models"), os.path.join(_repo_root, "pipelines")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import pandas as pd
 import numpy as np
 import hopsworks
