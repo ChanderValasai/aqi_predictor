@@ -177,4 +177,18 @@ if __name__ == "__main__":
     df = compute_features(aqi_data, weather_data)
     print(f"📊 Computed {len(df.columns)} features")
 
+    # Columns that must stay integer (bigint in the Feature Group schema)
+    int_cols = {"hour", "day_of_week", "day_of_month", "month", "is_weekend"}
+
+    # Cast numeric columns to float; keep int cols as int; skip strings/timestamp
+    for col in df.columns:
+        if col == "timestamp":
+            continue
+        if df[col].dtype == object:
+            continue  # skip string columns like weather_main
+        if col in int_cols:
+            df[col] = df[col].astype(int)
+        else:
+            df[col] = df[col].astype(float)
+            
     store_features(df)
