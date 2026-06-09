@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 
 # ────────────────────────────────────────────────────────────────────────────
 #  PAGE CONFIG
-# ────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────��──────────────────────────────────
 st.set_page_config(
     page_title="AQI Predictor — Karachi",
     page_icon="🌫️",
@@ -245,7 +245,7 @@ with tab1:
         fig.add_hline(y=150, line_dash="dash", line_color="red", annotation_text="Unhealthy")
         fig.add_hline(y=100, line_dash="dash", line_color="orange", annotation_text="Moderate")
         fig.update_layout(height=400)
-        st.plotly_chart(fig, use_column_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
         # ── Pollutant Breakdown ───────────────────────────────────────────
         st.markdown("### 🧪 Pollutant Levels")
@@ -259,7 +259,7 @@ with tab1:
             template="plotly_dark",
         )
         bar_fig.update_layout(height=350)
-        st.plotly_chart(bar_fig, use_column_width=True)
+        st.plotly_chart(bar_fig, use_container_width=True)
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
@@ -288,8 +288,7 @@ with tab2:
             hist_fig.add_vline(x=df["aqi"].mean(), line_dash="dash", line_color="red",
                                annotation_text=f"Mean: {df['aqi'].mean():.1f}")
             hist_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            # Fix: Remove deprecated use_allow_html parameter
-            st.plotly_chart(hist_fig, use_column_width=True)
+            st.plotly_chart(hist_fig, use_container_width=True)
 
         with r1c2:
             st.markdown("### AQI Categories")
@@ -306,7 +305,7 @@ with tab2:
                 template="plotly_dark",
             )
             pie_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(pie_fig, use_column_width=True)
+            st.plotly_chart(pie_fig, use_container_width=True)
 
         # ── Row 2: Hourly Pattern + Monthly Trend ──────────────────────────
         r2c1, r2c2 = st.columns(2)
@@ -321,7 +320,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "hour": "Hour of Day"},
             )
             h_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(h_fig, use_column_width=True)
+            st.plotly_chart(h_fig, use_container_width=True)
 
         with r2c2:
             st.markdown("### AQI by Month")
@@ -337,7 +336,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "month_name": "Month"},
             )
             m_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(m_fig, use_column_width=True)
+            st.plotly_chart(m_fig, use_container_width=True)
 
         # ── Row 3: Correlation Heatmap ─────────────────────────────────────
         st.markdown("### Correlation Heatmap (Key Features)")
@@ -355,7 +354,7 @@ with tab2:
             template="plotly_dark",
         )
         heat_fig.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(heat_fig, use_column_width=True)
+        st.plotly_chart(heat_fig, use_container_width=True)
 
         # ── Row 4: Summary Stats Table ──────────────────────────────────────
         st.markdown("### 📋 Summary Statistics")
@@ -423,7 +422,7 @@ with tab3:
         labels={"RMSE": "RMSE (lower is better)", "Model": "Model"},
     )
     bar_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(bar_chart, use_column_width=True)
+    st.plotly_chart(bar_chart, use_container_width=True)
 
     # ── R² Comparison ───────────────────────────────────────────────────
     st.markdown("### R² Comparison by Model & Horizon")
@@ -434,7 +433,7 @@ with tab3:
     )
     r2_chart.add_hline(y=0, line_dash="dash", line_color="white", annotation_text="Baseline")
     r2_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(r2_chart, use_column_width=True)
+    st.plotly_chart(r2_chart, use_container_width=True)
 
     st.markdown("---")
     st.markdown(
@@ -491,7 +490,7 @@ with tab4:
                 color="Importance", color_continuous_scale="Blues",
             )
             imp_bar.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(imp_bar, use_column_width=True)
+            st.plotly_chart(imp_bar, use_container_width=True)
 
             st.markdown("### 📋 Top 10 Features")
             top10 = imp_df.sort_values("Importance", ascending=False).head(10)
