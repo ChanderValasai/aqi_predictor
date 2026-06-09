@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "70X1aQLy6Dr7all5qr6qb"
+uri = "file://report.md"
+type = "text"
+title = "AQI Prediction System — Professional Report"
