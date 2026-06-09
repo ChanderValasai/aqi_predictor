@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 
 # ────────────────────────────────────────────────────────────────────────────
 #  PAGE CONFIG
-# ─────────────────────────────────────────��──────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="AQI Predictor — Karachi",
     page_icon="🌫️",
@@ -31,7 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────��────────────────────────────────
 #  SECRETS
 # ────────────────────────────────────────────────────────────────────────────
 def get_secret(key):
@@ -124,7 +124,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ────────────────────────────────────────────────────────────────────────────
 #  TAB 1 — LIVE DASHBOARD
-# ────────────────────────────────────────────────────────────────────────────
+# ─────────────���──────────────────────────────────────────────────────────────
 with tab1:
     try:
         forecaster, df = load_model_and_data()
@@ -141,7 +141,8 @@ with tab1:
         with c2:
             st.metric("PM2.5", f"{df['pm25'].iloc[-1]:.1f}")
         with c3:
-            pm10_val = df['pm10'].iloc[-1]
+            # Fix: Find last non-NaN PM10 value
+            pm10_val = df[df['pm10'].notna()]['pm10'].iloc[-1] if len(df[df['pm10'].notna()]) > 0 else np.nan
             st.metric("PM10", f"{pm10_val:.1f}" if pd.notna(pm10_val) else "N/A")
         with c4:
             st.metric("Temp", f"{df['temperature'].iloc[-1]:.1f} °C")
@@ -182,56 +183,78 @@ with tab1:
 
         # ── 3-Day Forecast ──────────────────────────────────────────────────
         st.markdown("## 📅 3-Day AQI Forecast")
-        drop_cols = [
-            "timestamp", "weather_main",
-            "target_aqi_24h", "target_aqi_48h", "target_aqi_72h",
-        ]
-        feature_cols = [c for c in df.columns if c not in drop_cols]
-        X_df = df[feature_cols].copy()
-        X_df = X_df.fillna(X_df.median(numeric_only=True)).fillna(0)
-        X_latest = X_df.iloc[[-1]].values
+        try:
+            drop_cols = [
+                "timestamp", "weather_main",
+                "target_aqi_24h", "target_aqi_48h", "target_aqi_72h",
+            ]
+            feature_cols = [c for c in df.columns if c not in drop_cols]
+            X_df = df[feature_cols].copy()
+            X_df = X_df.fillna(X_df.median(numeric_only=True)).fillna(0)
+            X_latest = X_df.iloc[[-1]].values
 
-        predictions = forecaster.predict(X_latest)
-        now = datetime.now()
-        forecast_dates = [
-            (now + timedelta(hours=24)).strftime("%b %d"),
-            (now + timedelta(hours=48)).strftime("%b %d"),
-            (now + timedelta(hours=72)).strftime("%b %d"),
-        ]
-
-        fc1, fc2, fc3 = st.columns(3)
-        
-        # Fix: Handle predictions correctly based on forecaster output structure
-        pred_values = []
-        if isinstance(predictions, dict):
-            # If forecaster returns dict with keys like "24h", "48h", "72h"
-            pred_values = [int(predictions.get("24h", 0)), 
-                          int(predictions.get("48h", 0)), 
-                          int(predictions.get("72h", 0))]
-        elif isinstance(predictions, np.ndarray) and predictions.ndim == 2:
-            # If predictions is 2D array (1, 3) - one row, 3 horizons
-            pred_values = [int(predictions[0, 0]), 
-                          int(predictions[0, 1]), 
-                          int(predictions[0, 2])]
-        elif isinstance(predictions, (list, np.ndarray)):
-            # If predictions is 1D array or list with 3 values
-            pred_values = [int(p) for p in predictions[:3]]
-        else:
-            # Fallback
-            pred_values = [0, 0, 0]
+            # Debug: Log prediction structure
+            predictions = forecaster.predict(X_latest)
+            st.write(f"Debug - Predictions type: {type(predictions)}, Content: {predictions}")
             
-        for col, pred_val, date in zip([fc1, fc2, fc3], pred_values, forecast_dates):
-            lbl, clr = get_aqi_category(pred_val)
-            with col:
-                st.markdown(
-                    f'<div style="border:3px solid {clr};border-radius:10px;'
-                    f'padding:18px;text-align:center;background:#1a1a2e;">'
-                    f'<b style="font-size:1.1em">{date}</b><br>'
-                    f'<span style="font-size:2.5em;font-weight:bold;color:{clr};">'
-                    f'{pred_val}</span><br>'
-                    f'<span style="font-size:0.9em">{lbl}</span></div>',
-                    unsafe_allow_html=True,
-                )
+            now = datetime.now()
+            forecast_dates = [
+                (now + timedelta(hours=24)).strftime("%b %d"),
+                (now + timedelta(hours=48)).strftime("%b %d"),
+                (now + timedelta(hours=72)).strftime("%b %d"),
+            ]
+
+            fc1, fc2, fc3 = st.columns(3)
+            
+            # Fix: Handle predictions dictionary with integer keys
+            pred_values = []
+            if isinstance(predictions, dict):
+                # Dictionary with integer keys: {24: array, 48: array, 72: array}
+                for horizon in [24, 48, 72]:
+                    if horizon in predictions:
+                        val = predictions[horizon]
+                        # Extract value from array if needed
+                        if isinstance(val, np.ndarray):
+                            pred_values.append(int(val[0]) if len(val) > 0 else 0)
+                        else:
+                            pred_values.append(int(val))
+                    else:
+                        pred_values.append(0)
+            elif isinstance(predictions, np.ndarray):
+                if predictions.ndim == 2 and predictions.shape[0] == 1:
+                    # 2D array (1, 3) - one row, 3 horizons
+                    pred_values = [int(predictions[0, i]) for i in range(min(3, predictions.shape[1]))]
+                elif predictions.ndim == 1 and len(predictions) >= 3:
+                    # 1D array with at least 3 values
+                    pred_values = [int(predictions[i]) for i in range(3)]
+                else:
+                    pred_values = [0, 0, 0]
+            else:
+                st.error(f"Unexpected prediction format: {type(predictions)}")
+                pred_values = [0, 0, 0]
+            
+            # Ensure we have exactly 3 values
+            while len(pred_values) < 3:
+                pred_values.append(0)
+            pred_values = pred_values[:3]
+                
+            for col, pred_val, date in zip([fc1, fc2, fc3], pred_values, forecast_dates):
+                lbl, clr = get_aqi_category(pred_val)
+                with col:
+                    st.markdown(
+                        f'<div style="border:3px solid {clr};border-radius:10px;'
+                        f'padding:18px;text-align:center;background:#1a1a2e;">'
+                        f'<b style="font-size:1.1em">{date}</b><br>'
+                        f'<span style="font-size:2.5em;font-weight:bold;color:{clr};">'
+                        f'{pred_val}</span><br>'
+                        f'<span style="font-size:0.9em">{lbl}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+        except Exception as forecast_error:
+            st.error(f"❌ 3-Day Forecast Error: {forecast_error}")
+            import traceback
+            st.write(traceback.format_exc())
 
         st.divider()
 
@@ -263,6 +286,8 @@ with tab1:
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+        import traceback
+        st.write(traceback.format_exc())
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -388,7 +413,7 @@ with tab3:
         {"Model": "Ridge", "Horizon": "+24h", "RMSE": 34.72, "MAE": 26.88, "R²": 0.0625, "MAPE": 22.43},
         {"Model": "RandomForest", "Horizon": "+24h", "RMSE": 35.98, "MAE": 28.14, "R²": -0.0066, "MAPE": 24.36},
         {"Model": "XGBoost", "Horizon": "+24h", "RMSE": 33.69, "MAE": 25.88, "R²": 0.1174, "MAPE": 23.02},
-        {"Model": "LightGBM", "Horizon": "+24h", "RMSE": 34.02, "MAE": 26.53, "R²": 0.1001, "MAPE": 23.51},
+        {"Model": "LightGBM", "Horizon": "+24h", "RMSE": 34.02, "MAE": 26.53, "R��": 0.1001, "MAPE": 23.51},
         # +48h
         {"Model": "Ridge", "Horizon": "+48h", "RMSE": 38.03, "MAE": 30.13, "R²": -0.1263, "MAPE": 27.19},
         {"Model": "RandomForest", "Horizon": "+48h", "RMSE": 41.09, "MAE": 32.28, "R²": -0.3148, "MAPE": 30.65},
