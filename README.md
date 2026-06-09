@@ -1,5 +1,5 @@
 # 🌫️ AQI Predictor
-
+## Streamlit Link: https://aqipredictor-chander.streamlit.app/
 A machine learning-powered **3-day Air Quality Index (AQI) forecasting system** with a Streamlit dashboard, integrated with Hopsworks feature store and model registry for end-to-end MLOps.
 
 ## 🎯 What This Project Does
