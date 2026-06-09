@@ -145,7 +145,7 @@ def run_training():
     for name, builder in model_builders.items():
         print(f"\n🚀 Training {name}...")
         forecaster = MultiHorizonForecaster(base_model_fn=builder)
-        forecaster.fit(X_train, y_train)
+        forecaster.fit(X_train, y_train, feature_names=feature_cols)
         metrics_df = forecaster.evaluate_all(X_test, y_test)
         metrics_df["model_family"] = name
         results.append(metrics_df)

@@ -188,21 +188,36 @@ class MultiHorizonForecaster:
     More accurate than recursive (chained) prediction for AQI.
     """
     def __init__(self, base_model_fn=build_xgboost):
-        self.models = {}
+        self.models        = {}
         self.base_model_fn = base_model_fn
-        self.horizons = [24, 48, 72]
+        self.horizons      = [24, 48, 72]
+        self.feature_names = None   # set during fit(); used to avoid name warnings
 
-    def fit(self, X, y_dict, val_fraction=0.15):
-        """
-        y_dict = {"24h": array, "48h": array, "72h": array}
+    def _as_df(self, X):
+        """Wrap X in a DataFrame if feature names are available."""
+        if self.feature_names is not None and not isinstance(X, pd.DataFrame):
+            return pd.DataFrame(X, columns=self.feature_names)
+        return X
 
-        val_fraction: fraction of training data held out as an *internal*
-        validation set for early stopping (XGBoost / LightGBM only).
-        Ridge and RandomForest always train on the full X.
+    def fit(self, X, y_dict, val_fraction=0.15, feature_names=None):
         """
-        n_val  = max(50, int(len(X) * val_fraction))
-        X_tr   = X[:-n_val]
-        X_val  = X[-n_val:]
+        X            : numpy array or DataFrame of shape (n_samples, n_features)
+        y_dict       : {"24h": array, "48h": array, "72h": array}
+        val_fraction : last fraction of training rows used as an *internal*
+                       validation set for early stopping (XGBoost / LightGBM).
+                       Ridge and RandomForest always train on the full X.
+        feature_names: list of column names — prevents LightGBM/XGBoost from
+                       emitting "X does not have valid feature names" at predict time.
+        """
+        if feature_names is not None:
+            self.feature_names = list(feature_names)
+
+        n_val = max(50, int(len(X) * val_fraction))
+
+        # Boosting models get a DataFrame so names are stored consistently
+        X_df     = self._as_df(X)
+        X_df_tr  = X_df.iloc[:-n_val] if isinstance(X_df, pd.DataFrame) else X_df[:-n_val]
+        X_df_val = X_df.iloc[-n_val:]  if isinstance(X_df, pd.DataFrame) else X_df[-n_val:]
 
         for h in self.horizons:
             key   = f"{h}h"
@@ -215,38 +230,47 @@ class MultiHorizonForecaster:
 
             if model_name == "XGBRegressor":
                 model.fit(
-                    X_tr, y_tr,
-                    eval_set=[(X_val, y_val)],
+                    X_df_tr, y_tr,
+                    eval_set=[(X_df_val, y_val)],
                     verbose=False,
                 )
-                print(f"   ↳ XGBoost stopped at round {model.best_iteration}")
+                best_r = model.best_iteration
+                n_trees = model.get_booster().num_boosted_rounds()
+                print(f"   ↳ best round: {best_r}  |  trees trained: {n_trees}"
+                      f"  |  stopped {n_trees - best_r} rounds after best")
 
             elif model_name == "LGBMRegressor":
                 model.fit(
-                    X_tr, y_tr,
-                    eval_set=[(X_val, y_val)],
+                    X_df_tr, y_tr,
+                    eval_set=[(X_df_val, y_val)],
                     callbacks=[
                         lgb.early_stopping(stopping_rounds=50, verbose=False),
-                        lgb.log_evaluation(period=-1),
+                        lgb.log_evaluation(period=0),
                     ],
                 )
-                print(f"   ↳ LightGBM stopped at round {model.best_iteration_}")
+                best_r = model.best_iteration_
+                # LightGBM trims the booster to best_iteration_ after early stopping,
+                # so n_estimators_ == best_iteration_.  Actual rounds run = best + 50.
+                print(f"   ↳ best round: {best_r}  |  early-stopped after ~{best_r + 50} rounds")
 
             else:
-                # Ridge (Pipeline) and RandomForest: use the full training set
-                model.fit(X, y_dict[key])
+                # Ridge (Pipeline) and RandomForest: fit with DataFrame so that
+                # predict() (which also receives a DataFrame via _as_df) stays consistent
+                model.fit(X_df, y_dict[key])
 
             self.models[key] = model
         return self
 
     def predict(self, X):
-        return {h: self.models[f"{h}h"].predict(X) for h in [24, 48, 72]}
+        X_in = self._as_df(X)
+        return {h: self.models[f"{h}h"].predict(X_in) for h in [24, 48, 72]}
 
     def evaluate_all(self, X_test, y_test_dict):
+        X_in    = self._as_df(X_test)
         results = []
         for h in self.horizons:
-            key = f"{h}h"
-            y_pred = self.models[key].predict(X_test)
+            key    = f"{h}h"
+            y_pred = self.models[key].predict(X_in)
             metrics = evaluate(y_test_dict[key], y_pred, f"XGBoost (+{key})")
             results.append(metrics)
         return pd.DataFrame(results)
