@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import Ridge, Lasso, ElasticNet
+from sklearn.linear_model import Ridge, RidgeCV, Lasso, ElasticNet
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
+import lightgbm as lgb
 from model_utils import evaluate, explain_with_shap, save_model
 
 # ─── DATA LOADING ─────────────────────────────────────────────────────────────
@@ -62,26 +63,30 @@ def time_series_cv(model, X, y, n_splits=5):
 # ─── MODEL DEFINITIONS ────────────────────────────────────────────────────────
 
 def build_ridge():
-    """Linear baseline with L2 regularization."""
+    """
+    Linear baseline with L2 regularization.
+    RidgeCV auto-selects the best alpha via cross-validation instead of
+    guessing alpha=1.0, which removes one source of underfitting/overfitting.
+    """
     return Pipeline([
         ("scaler", StandardScaler()),
-        ("model",  Ridge(alpha=1.0))
+        ("model",  RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 500.0]))
     ])
 
 
 def build_random_forest():
     """
     Strong non-linear baseline. Handles feature interactions well.
-    Key hyperparameters:
-      - n_estimators: more trees = better but slower (100-500)
-      - max_depth: controls overfitting (None = fully grown, risky for AQI)
-      - min_samples_leaf: minimum samples per leaf, improves generalization
+    Anti-overfitting changes vs. the original:
+      - max_depth: 15 → 8   (shallower trees generalise better)
+      - min_samples_leaf: 5 → 20  (each leaf needs more evidence)
+      - max_features: 0.7 → 0.5  (more feature randomness = less variance)
     """
     return RandomForestRegressor(
-        n_estimators=200,
-        max_depth=15,
-        min_samples_leaf=5,
-        max_features=0.7,        # use 70% of features at each split
+        n_estimators=300,
+        max_depth=8,
+        min_samples_leaf=20,
+        max_features=0.5,
         n_jobs=-1,
         random_state=42,
     )
@@ -89,24 +94,26 @@ def build_random_forest():
 
 def build_xgboost():
     """
-    Usually the best performer on tabular time-series data.
-    Key hyperparameters:
-      - learning_rate (eta): smaller = better generalization (try 0.01-0.3)
-      - n_estimators: number of boosting rounds (use early stopping)
-      - max_depth: depth of trees (3-8 for tabular data)
-      - subsample: row sampling per tree (0.6-1.0)
-      - colsample_bytree: feature sampling per tree (0.6-1.0)
+    Gradient boosting. Early stopping is applied in MultiHorizonForecaster.fit()
+    using the last 15 % of training as a validation set.
+    Anti-overfitting changes vs. original:
+      - max_depth: 6 → 4   (shallower)
+      - min_child_weight: 5 → 20  (higher = less sensitive to noise)
+      - reg_alpha: 0.1 → 1.0   (stronger L1)
+      - reg_lambda: 1.0 → 5.0  (stronger L2)
+      - n_estimators set high; early stopping finds the true optimum
     """
     return XGBRegressor(
-        n_estimators=500,
+        n_estimators=1000,
         learning_rate=0.05,
-        max_depth=6,
+        max_depth=4,
         subsample=0.8,
-        colsample_bytree=0.8,
-        min_child_weight=5,
-        reg_alpha=0.1,           # L1 regularization
-        reg_lambda=1.0,          # L2 regularization
+        colsample_bytree=0.7,
+        min_child_weight=20,
+        reg_alpha=1.0,
+        reg_lambda=5.0,
         eval_metric="rmse",
+        early_stopping_rounds=50,   # XGBoost ≥ 2.0: constructor param, not fit()
         random_state=42,
         n_jobs=-1,
     )
@@ -114,21 +121,28 @@ def build_xgboost():
 
 def build_lightgbm():
     """
-    Faster than XGBoost, often comparable accuracy.
-    Better for large datasets (>100k rows).
+    Gradient boosting, leaf-wise growth. Early stopping applied in
+    MultiHorizonForecaster.fit().
+    Anti-overfitting changes vs. original:
+      - max_depth: 6 → 4
+      - num_leaves: 63 → 31  (2^4 − 1; keeps trees shallow)
+      - min_child_samples: 20 → 50  (more data per leaf)
+      - reg_alpha: 0.1 → 1.0
+      - reg_lambda: 1.0 → 5.0
     """
     return LGBMRegressor(
-        n_estimators=500,
+        n_estimators=1000,
         learning_rate=0.05,
-        max_depth=6,
-        num_leaves=63,           # 2^max_depth - 1 is a good rule of thumb
+        max_depth=4,
+        num_leaves=31,
         subsample=0.8,
-        colsample_bytree=0.8,
-        min_child_samples=20,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
+        colsample_bytree=0.7,
+        min_child_samples=50,
+        reg_alpha=1.0,
+        reg_lambda=5.0,
         random_state=42,
         n_jobs=-1,
+        verbose=-1,
     )
 
 
@@ -178,13 +192,50 @@ class MultiHorizonForecaster:
         self.base_model_fn = base_model_fn
         self.horizons = [24, 48, 72]
 
-    def fit(self, X, y_dict):
-        """y_dict = {"24h": Series, "48h": Series, "72h": Series}"""
+    def fit(self, X, y_dict, val_fraction=0.15):
+        """
+        y_dict = {"24h": array, "48h": array, "72h": array}
+
+        val_fraction: fraction of training data held out as an *internal*
+        validation set for early stopping (XGBoost / LightGBM only).
+        Ridge and RandomForest always train on the full X.
+        """
+        n_val  = max(50, int(len(X) * val_fraction))
+        X_tr   = X[:-n_val]
+        X_val  = X[-n_val:]
+
         for h in self.horizons:
-            key = f"{h}h"
+            key   = f"{h}h"
+            y_tr  = y_dict[key][:-n_val]
+            y_val = y_dict[key][-n_val:]
+
             print(f"\n🏋️  Training {h}h horizon model...")
-            model = self.base_model_fn()
-            model.fit(X, y_dict[key])
+            model      = self.base_model_fn()
+            model_name = type(model).__name__
+
+            if model_name == "XGBRegressor":
+                model.fit(
+                    X_tr, y_tr,
+                    eval_set=[(X_val, y_val)],
+                    verbose=False,
+                )
+                print(f"   ↳ XGBoost stopped at round {model.best_iteration}")
+
+            elif model_name == "LGBMRegressor":
+                model.fit(
+                    X_tr, y_tr,
+                    eval_set=[(X_val, y_val)],
+                    callbacks=[
+                        lgb.early_stopping(stopping_rounds=50, verbose=False),
+                        lgb.log_evaluation(period=-1),
+                    ],
+                )
+                print(f"   ↳ LightGBM stopped at round {model.best_iteration_}")
+
+            else:
+                # Ridge (Pipeline) and RandomForest: use the full training set
+                model.fit(X, y_dict[key])
+
             self.models[key] = model
         return self
 

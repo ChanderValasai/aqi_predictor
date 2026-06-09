@@ -31,6 +31,7 @@ import numpy as np
 import hopsworks
 from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import VarianceThreshold
 from baseline_models import (
     build_xgboost, build_lightgbm, build_random_forest,
     build_ridge, MultiHorizonForecaster, time_series_cv
@@ -98,6 +99,17 @@ def run_training():
     )
 
     print(f"✅ Usable rows after recomputing features: {len(df)}")
+
+    # ── 2c. Drop near-zero-variance features ─────────────────────────────────
+    # Features whose variance is < 1% of the max variance carry almost no
+    # signal but add noise degrees-of-freedom that cause overfitting.
+    X_all = df[feature_cols].values
+    vt    = VarianceThreshold(threshold=0.0)   # removes truly constant cols
+    vt.fit(X_all)
+    kept_mask    = vt.get_support()
+    feature_cols = [c for c, k in zip(feature_cols, kept_mask) if k]
+    print(f"🔬 Features after variance filter: {len(feature_cols)} "
+          f"(dropped {kept_mask.size - kept_mask.sum()} constant cols)")
 
     X = df[feature_cols].values
     y = {
