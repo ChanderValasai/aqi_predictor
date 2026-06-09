@@ -193,6 +193,12 @@ class MultiHorizonForecaster:
         self.horizons      = [24, 48, 72]
         self.feature_names = None   # set during fit(); used to avoid name warnings
 
+    def __setstate__(self, state):
+        """Backward compatibility: old pickles lack `feature_names`."""
+        self.__dict__.update(state)
+        if "feature_names" not in self.__dict__:
+            self.feature_names = None
+
     def _as_df(self, X):
         """Wrap X in a DataFrame if feature names are available."""
         if self.feature_names is not None and not isinstance(X, pd.DataFrame):

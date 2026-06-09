@@ -85,7 +85,9 @@ def load_model_and_data():
         api_key_value=get_secret("HOPSWORKS_API_KEY"),
     )
     mr = project.get_model_registry()
-    model_meta = mr.get_model("aqi_forecaster", version=1)
+    # Load latest model version (v12 is the newest trained model)
+    all_models = mr.get_models("aqi_forecaster")
+    model_meta = max(all_models, key=lambda m: m.version) if all_models else None
     if model_meta is None:
         raise RuntimeError(
             "No model named **aqi_forecaster** found in your Hopsworks Model Registry. "
@@ -224,7 +226,7 @@ with tab1:
         fig.add_hline(y=150, line_dash="dash", line_color="red", annotation_text="Unhealthy")
         fig.add_hline(y=100, line_dash="dash", line_color="orange", annotation_text="Moderate")
         fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # ── Pollutant Breakdown ───────────────────────────────────────────
         st.markdown("### 🧪 Pollutant Levels")
@@ -238,7 +240,7 @@ with tab1:
             template="plotly_dark",
         )
         bar_fig.update_layout(height=350)
-        st.plotly_chart(bar_fig, use_container_width=True)
+        st.plotly_chart(bar_fig, width='stretch')
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
@@ -284,7 +286,7 @@ with tab2:
                 template="plotly_dark",
             )
             pie_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(pie_fig, use_container_width=True)
+            st.plotly_chart(pie_fig, width='stretch')
 
         # ── Row 2: Hourly Pattern + Monthly Trend ──────────────────────────
         r2c1, r2c2 = st.columns(2)
@@ -299,7 +301,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "hour": "Hour of Day"},
             )
             h_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(h_fig, use_container_width=True)
+            st.plotly_chart(h_fig, width='stretch')
 
         with r2c2:
             st.markdown("### AQI by Month")
@@ -315,7 +317,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "month_name": "Month"},
             )
             m_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(m_fig, use_container_width=True)
+            st.plotly_chart(m_fig, width='stretch')
 
         # ── Row 3: Correlation Heatmap ─────────────────────────────────────
         st.markdown("### Correlation Heatmap (Key Features)")
@@ -333,7 +335,7 @@ with tab2:
             template="plotly_dark",
         )
         heat_fig.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(heat_fig, use_container_width=True)
+        st.plotly_chart(heat_fig, width='stretch')
 
         # ── Row 4: Summary Stats Table ──────────────────────────────────────
         st.markdown("### 📋 Summary Statistics")
@@ -347,7 +349,7 @@ with tab2:
         stats["missing_pct"] = (stats["missing"] / len(df) * 100).round(1)
         st.dataframe(
             stats.style.format("{:.2f}").background_gradient(cmap="YlGnBu"),
-            use_container_width=True,
+            width='stretch',
         )
 
     except Exception as e:
@@ -389,7 +391,7 @@ with tab3:
             "RMSE": "{:.2f}", "MAE": "{:.2f}", "R²": "{:.4f}", "MAPE": "{:.2f}%",
         }).background_gradient(subset=["RMSE", "MAE", "MAPE"], cmap="YlOrRd")
         .background_gradient(subset=["R²"], cmap="RdYlGn"),
-        use_container_width=True,
+        width='stretch',
     )
 
     # ── Bar Chart Comparison (RMSE) ─────────────────────────────────────
@@ -401,7 +403,7 @@ with tab3:
         labels={"RMSE": "RMSE (lower is better)", "Model": "Model"},
     )
     bar_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(bar_chart, use_container_width=True)
+    st.plotly_chart(bar_chart, width='stretch')
 
     # ── R² Comparison ───────────────────────────────────────────────────
     st.markdown("### R² Comparison by Model & Horizon")
@@ -412,7 +414,7 @@ with tab3:
     )
     r2_chart.add_hline(y=0, line_dash="dash", line_color="white", annotation_text="Baseline")
     r2_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(r2_chart, use_container_width=True)
+    st.plotly_chart(r2_chart, width='stretch')
 
     st.markdown("---")
     st.markdown(
@@ -432,83 +434,69 @@ with tab4:
         forecaster, df = load_model_and_data()
         df = df.tail(2000)
 
-        # Build feature matrix
         drop_cols = [
             "timestamp", "weather_main",
             "target_aqi_24h", "target_aqi_48h", "target_aqi_72h",
         ]
         feature_cols = [c for c in df.columns if c not in drop_cols]
-        X_df = df[feature_cols].copy()
-        X_df = X_df.fillna(X_df.median(numeric_only=True)).fillna(0)
 
         # Use the +24h model
         model_24h = forecaster.models["24h"]
 
-        # Compute SHAP for a sample (cache for performance)
-        @st.cache_data(ttl=3600, show_spinner=False)
-        def compute_shap_cached(X_sample, feature_names):
-            explainer = shap.TreeExplainer(model_24h)
-            sv = explainer.shap_values(X_sample)
-            return sv, explainer.expected_value
+        # ── Model-native Feature Importance (safe, no SHAP segfault) ────
+        st.markdown("### 🔥 Feature Importance (XGBoost built-in)")
+        if hasattr(model_24h, "feature_importances_"):
+            importance = model_24h.feature_importances_
+            imp_df = pd.DataFrame({
+                "Feature": feature_cols,
+                "Importance": importance,
+            }).sort_values("Importance", ascending=True).tail(20)
 
-        # Use last 200 rows for SHAP
-        X_shap = X_df.tail(200)
-        shap_values, base_value = compute_shap_cached(
-            X_shap.values, feature_cols
-        )
+            imp_bar = px.bar(
+                imp_df, x="Importance", y="Feature", orientation="h",
+                template="plotly_dark",
+                color="Importance", color_continuous_scale="Blues",
+            )
+            imp_bar.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
+            st.plotly_chart(imp_bar, width='stretch')
 
-        # ── Mean |SHAP| Bar Chart ───────────────────────────────────────
-        st.markdown("### Mean Absolute SHAP Value (Feature Importance)")
-        mean_shap = np.abs(shap_values).mean(axis=0)
-        shap_df = pd.DataFrame({
-            "Feature": feature_cols,
-            "Mean |SHAP|": mean_shap,
-        }).sort_values("Mean |SHAP|", ascending=True).tail(15)
+            st.markdown("### 📋 Top 10 Features")
+            top10 = imp_df.sort_values("Importance", ascending=False).head(10)
+            st.dataframe(
+                top10.style.format({"Importance": "{:.4f}"})
+                .background_gradient(cmap="Blues"),
+                width='stretch',
+            )
+        else:
+            st.info("Feature importance not available for this model type.")
 
-        shap_bar = px.bar(
-            shap_df, x="Mean |SHAP|", y="Feature", orientation="h",
-            template="plotly_dark",
-            color="Mean |SHAP|", color_continuous_scale="Blues",
-        )
-        shap_bar.update_layout(height=450, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(shap_bar, use_container_width=True)
+        # ── Static SHAP images (generated during training) ─────────────
+        st.markdown("### 🖼️ SHAP Summary Plots (from training run)")
+        shap_summary_path = os.path.join(_repo_root, "shap_summary.png")
+        shap_beeswarm_path = os.path.join(_repo_root, "shap_beeswarm.png")
 
-        # ── Top Features Table ──────────────────────────────────────────
-        st.markdown("### 📋 Top 10 Features by Importance")
-        top10 = shap_df.sort_values("Mean |SHAP|", ascending=False).head(10)
-        st.dataframe(
-            top10.style.format({"Mean |SHAP|": "{:.3f}"})
-            .background_gradient(cmap="Blues"),
-            use_container_width=True,
-        )
+        if os.path.exists(shap_summary_path):
+            st.image(shap_summary_path, caption="SHAP Summary (Bar) — Mean absolute impact")
+        else:
+            st.info("SHAP summary image not found. Run `python pipelines/training_pipeline.py` to generate.")
 
-        # ── SHAP Waterfall for Latest Prediction ───────────────────────
-        st.markdown("### 🌊 SHAP Waterfall — Latest Prediction")
-        st.markdown("How the model arrived at the +24h forecast for the most recent hour.")
+        if os.path.exists(shap_beeswarm_path):
+            st.image(shap_beeswarm_path, caption="SHAP Beeswarm — Distribution of impacts")
+        else:
+            st.info("SHAP beeswarm image not found. Run `python pipelines/training_pipeline.py` to generate.")
 
-        # Show waterfall for the single latest row
-        latest_shap = shap_values[-1]
-        latest_row = X_shap.iloc[-1]
-
-        # Build a simple force-like summary
-        top_idx = np.argsort(np.abs(latest_shap))[-10:][::-1]
-        wf_data = pd.DataFrame({
-            "Feature": [feature_cols[i] for i in top_idx],
-            "SHAP Value": [latest_shap[i] for i in top_idx],
-            "Value": [latest_row.iloc[i] for i in top_idx],
-        })
-        wf_data["Direction"] = wf_data["SHAP Value"].apply(lambda x: "↑" if x > 0 else "↓")
-        wf_data["SHAP Value"] = wf_data["SHAP Value"].round(3)
-        wf_data["Value"] = wf_data["Value"].round(2)
-
-        st.dataframe(
-            wf_data.style.format({"SHAP Value": "{:.3f}", "Value": "{:.2f}"})
-            .map(lambda x: "color: #00e400" if x == "↑" else "color: #ff0000", subset=["Direction"])
-            .background_gradient(cmap="RdBu_r", subset=["SHAP Value"]),
-            use_container_width=True,
-        )
-
-        st.markdown(f"**Base value (expected AQI):** {base_value:.1f}")
+        # ── SHAP values JSON download ─────────────────────────────────
+        shap_json_path = os.path.join(_repo_root, "shap_values.json")
+        if os.path.exists(shap_json_path):
+            st.markdown("### 📄 SHAP Values JSON")
+            st.caption("Downloadable SHAP values for the last 200 test samples")
+            with open(shap_json_path) as f:
+                st.download_button(
+                    label="Download SHAP Values",
+                    data=f.read(),
+                    file_name="shap_values.json",
+                    mime="application/json",
+                )
 
     except Exception as e:
         st.error(f"❌ SHAP Error: {e}")
