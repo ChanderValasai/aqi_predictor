@@ -52,18 +52,52 @@ def run_training():
     # ── 2. Fetch Training Data ───────────────────────────────────────────────
     fg = fs.get_feature_group("aqi_features", version=1)
     df = fg.read()
-    df = df.sort_values("timestamp")
+    df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # Define features and multi-horizon targets
-    target_cols = ["target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
-    drop_cols   = ["timestamp", "weather_main"] + target_cols
+    print(f"📥 Raw rows from Feature Store: {len(df)}")
+
+    # ── 2a. Recompute lag/rolling/target columns from the full time series ───
+    # The backfill pipeline stored NaN for these columns because individual
+    # hourly snapshots have no history. We recompute them here from the
+    # sorted series so that all ~8,400 historical rows become usable.
+
+    for lag in [1, 2, 3, 6, 12, 24]:
+        df[f"aqi_lag_{lag}h"]  = df["aqi"].shift(lag)
+        df[f"pm25_lag_{lag}h"] = df["pm25"].shift(lag)
+
+    for window in [3, 6, 12, 24]:
+        # shift(1) avoids leaking the current value into the rolling window
+        rolled = df["aqi"].shift(1).rolling(window)
+        df[f"aqi_roll_mean_{window}h"] = rolled.mean()
+        df[f"aqi_roll_std_{window}h"]  = rolled.std()
+        df[f"aqi_roll_max_{window}h"]  = rolled.max()
+
+    df["aqi_change_1h"]  = df["aqi"].diff(1)
+    df["aqi_change_3h"]  = df["aqi"].diff(3)
+    df["aqi_change_24h"] = df["aqi"].diff(24)
+
+    # Targets: future AQI values
+    df["target_aqi_24h"] = df["aqi"].shift(-24)
+    df["target_aqi_48h"] = df["aqi"].shift(-48)
+    df["target_aqi_72h"] = df["aqi"].shift(-72)
+
+    # ── 2b. Build feature/target arrays ─────────────────────────────────────
+    target_cols  = ["target_aqi_24h", "target_aqi_48h", "target_aqi_72h"]
+    drop_cols    = ["timestamp", "weather_main"] + target_cols
     feature_cols = [c for c in df.columns if c not in drop_cols]
 
-    # Only drop rows where targets or core numeric features are missing
-    required_cols = target_cols + ["aqi", "pm25", "aqi_lag_1h", "aqi_roll_mean_3h"]
+    # Drop rows where targets are NaN (last 72 rows) or core inputs are NaN
+    required_cols = target_cols + ["aqi", "pm25"]
     df = df.dropna(subset=required_cols)
-    # Fill remaining NaNs (e.g. weather cols) with column medians, then 0 for all-NaN cols
-    df[feature_cols] = df[feature_cols].fillna(df[feature_cols].median(numeric_only=True)).fillna(0)
+
+    # Fill any remaining NaNs (e.g. first few rows missing early lags, weather cols)
+    df[feature_cols] = (
+        df[feature_cols]
+        .fillna(df[feature_cols].median(numeric_only=True))
+        .fillna(0)
+    )
+
+    print(f"✅ Usable rows after recomputing features: {len(df)}")
 
     X = df[feature_cols].values
     y = {
