@@ -21,9 +21,9 @@ import shap
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  PAGE CONFIG
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="AQI Predictor — Karachi",
     page_icon="🌫️",
@@ -31,9 +31,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  SECRETS
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 def get_secret(key):
     """Read from Replit Secrets (env vars) first, then fall back to st.secrets."""
     value = os.environ.get(key, "").strip()
@@ -45,9 +45,9 @@ def get_secret(key):
     except Exception:
         return None
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  AQI COLOUR SCALE
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 AQI_LEVELS = [
     (0,   50,  "Good",              "#00e400"),
     (51,  100, "Moderate",          "#ffff00"),
@@ -74,9 +74,9 @@ def get_aqi_category(aqi_val):
     return "Hazardous", "#7e0023"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  LOAD DATA (cached)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(ttl=1800, show_spinner=False)
 def load_model_and_data():
     """Load model + last 2000 rows from Hopsworks (cached 30 min)."""
@@ -103,18 +103,18 @@ def load_model_and_data():
     return forecaster, df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 st.sidebar.title("🌫️ AQI Predictor")
 st.sidebar.markdown("**City:** Karachi, Pakistan")
 st.sidebar.markdown("**Lat / Lon:** 24.86°N, 67.01°E")
 st.sidebar.markdown("**Population:** ~15 million")
 st.sidebar.markdown("---")
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  MAIN TABS
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Live Dashboard",
     "🔍 EDA Analysis",
@@ -122,9 +122,9 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "💡 SHAP Explainability",
 ])
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  TAB 1 — LIVE DASHBOARD
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 with tab1:
     try:
         forecaster, df = load_model_and_data()
@@ -200,8 +200,27 @@ with tab1:
         ]
 
         fc1, fc2, fc3 = st.columns(3)
-        for col, h, date in zip([fc1, fc2, fc3], [24, 48, 72], forecast_dates):
-            pred_val = int(np.asarray(predictions[h]).flat[0])
+        
+        # Fix: Handle predictions correctly based on forecaster output structure
+        pred_values = []
+        if isinstance(predictions, dict):
+            # If forecaster returns dict with keys like "24h", "48h", "72h"
+            pred_values = [int(predictions.get("24h", 0)), 
+                          int(predictions.get("48h", 0)), 
+                          int(predictions.get("72h", 0))]
+        elif isinstance(predictions, np.ndarray) and predictions.ndim == 2:
+            # If predictions is 2D array (1, 3) - one row, 3 horizons
+            pred_values = [int(predictions[0, 0]), 
+                          int(predictions[0, 1]), 
+                          int(predictions[0, 2])]
+        elif isinstance(predictions, (list, np.ndarray)):
+            # If predictions is 1D array or list with 3 values
+            pred_values = [int(p) for p in predictions[:3]]
+        else:
+            # Fallback
+            pred_values = [0, 0, 0]
+            
+        for col, pred_val, date in zip([fc1, fc2, fc3], pred_values, forecast_dates):
             lbl, clr = get_aqi_category(pred_val)
             with col:
                 st.markdown(
@@ -226,7 +245,7 @@ with tab1:
         fig.add_hline(y=150, line_dash="dash", line_color="red", annotation_text="Unhealthy")
         fig.add_hline(y=100, line_dash="dash", line_color="orange", annotation_text="Moderate")
         fig.update_layout(height=400)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_column_width=True)
 
         # ── Pollutant Breakdown ───────────────────────────────────────────
         st.markdown("### 🧪 Pollutant Levels")
@@ -240,15 +259,15 @@ with tab1:
             template="plotly_dark",
         )
         bar_fig.update_layout(height=350)
-        st.plotly_chart(bar_fig, width='stretch')
+        st.plotly_chart(bar_fig, use_column_width=True)
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  TAB 2 — EDA ANALYSIS
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 with tab2:
     try:
         _, df = load_model_and_data()
@@ -269,7 +288,8 @@ with tab2:
             hist_fig.add_vline(x=df["aqi"].mean(), line_dash="dash", line_color="red",
                                annotation_text=f"Mean: {df['aqi'].mean():.1f}")
             hist_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(hist_fig, use_allow_html=True)
+            # Fix: Remove deprecated use_allow_html parameter
+            st.plotly_chart(hist_fig, use_column_width=True)
 
         with r1c2:
             st.markdown("### AQI Categories")
@@ -286,7 +306,7 @@ with tab2:
                 template="plotly_dark",
             )
             pie_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(pie_fig, width='stretch')
+            st.plotly_chart(pie_fig, use_column_width=True)
 
         # ── Row 2: Hourly Pattern + Monthly Trend ──────────────────────────
         r2c1, r2c2 = st.columns(2)
@@ -301,7 +321,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "hour": "Hour of Day"},
             )
             h_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(h_fig, width='stretch')
+            st.plotly_chart(h_fig, use_column_width=True)
 
         with r2c2:
             st.markdown("### AQI by Month")
@@ -317,7 +337,7 @@ with tab2:
                 labels={"aqi": "Avg AQI", "month_name": "Month"},
             )
             m_fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(m_fig, width='stretch')
+            st.plotly_chart(m_fig, use_column_width=True)
 
         # ── Row 3: Correlation Heatmap ─────────────────────────────────────
         st.markdown("### Correlation Heatmap (Key Features)")
@@ -335,7 +355,7 @@ with tab2:
             template="plotly_dark",
         )
         heat_fig.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(heat_fig, width='stretch')
+        st.plotly_chart(heat_fig, use_column_width=True)
 
         # ── Row 4: Summary Stats Table ──────────────────────────────────────
         st.markdown("### 📋 Summary Statistics")
@@ -349,16 +369,16 @@ with tab2:
         stats["missing_pct"] = (stats["missing"] / len(df) * 100).round(1)
         st.dataframe(
             stats.style.format("{:.2f}").background_gradient(cmap="YlGnBu"),
-            width='stretch',
+            use_container_width=True,
         )
 
     except Exception as e:
         st.error(f"❌ EDA Error: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  TAB 3 — MODEL PERFORMANCE
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 with tab3:
     st.markdown("## 🏆 Model Performance Results")
     st.markdown("Results from the latest training run (v10).")
@@ -391,7 +411,7 @@ with tab3:
             "RMSE": "{:.2f}", "MAE": "{:.2f}", "R²": "{:.4f}", "MAPE": "{:.2f}%",
         }).background_gradient(subset=["RMSE", "MAE", "MAPE"], cmap="YlOrRd")
         .background_gradient(subset=["R²"], cmap="RdYlGn"),
-        width='stretch',
+        use_container_width=True,
     )
 
     # ── Bar Chart Comparison (RMSE) ─────────────────────────────────────
@@ -403,7 +423,7 @@ with tab3:
         labels={"RMSE": "RMSE (lower is better)", "Model": "Model"},
     )
     bar_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(bar_chart, width='stretch')
+    st.plotly_chart(bar_chart, use_column_width=True)
 
     # ── R² Comparison ───────────────────────────────────────────────────
     st.markdown("### R² Comparison by Model & Horizon")
@@ -414,7 +434,7 @@ with tab3:
     )
     r2_chart.add_hline(y=0, line_dash="dash", line_color="white", annotation_text="Baseline")
     r2_chart.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(r2_chart, width='stretch')
+    st.plotly_chart(r2_chart, use_column_width=True)
 
     st.markdown("---")
     st.markdown(
@@ -423,9 +443,9 @@ with tab3:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  TAB 4 — SHAP EXPLAINABILITY
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 with tab4:
     st.markdown("## 💡 SHAP Explainability")
     st.markdown("Feature importance for the +24h XGBoost model.")
@@ -447,8 +467,21 @@ with tab4:
         st.markdown("### 🔥 Feature Importance (XGBoost built-in)")
         if hasattr(model_24h, "feature_importances_"):
             importance = model_24h.feature_importances_
+            
+            # Ensure feature_cols and importance have matching lengths
+            if len(importance) != len(feature_cols):
+                st.warning(
+                    f"⚠️ Feature mismatch: {len(importance)} importances vs {len(feature_cols)} features. "
+                    "Truncating to match."
+                )
+                min_len = min(len(importance), len(feature_cols))
+                importance = importance[:min_len]
+                feature_cols_truncated = feature_cols[:min_len]
+            else:
+                feature_cols_truncated = feature_cols
+            
             imp_df = pd.DataFrame({
-                "Feature": feature_cols,
+                "Feature": feature_cols_truncated,
                 "Importance": importance,
             }).sort_values("Importance", ascending=True).tail(20)
 
@@ -458,14 +491,14 @@ with tab4:
                 color="Importance", color_continuous_scale="Blues",
             )
             imp_bar.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(imp_bar, width='stretch')
+            st.plotly_chart(imp_bar, use_column_width=True)
 
             st.markdown("### 📋 Top 10 Features")
             top10 = imp_df.sort_values("Importance", ascending=False).head(10)
             st.dataframe(
                 top10.style.format({"Importance": "{:.4f}"})
                 .background_gradient(cmap="Blues"),
-                width='stretch',
+                use_container_width=True,
             )
         else:
             st.info("Feature importance not available for this model type.")
@@ -502,9 +535,9 @@ with tab4:
         st.error(f"❌ SHAP Error: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 #  FOOTER
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.caption(
     "🌫️ AQI Predictor for Karachi — Powered by XGBoost + Hopsworks Feature Store | "
