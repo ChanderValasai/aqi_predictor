@@ -1,5 +1,14 @@
 
 import os
+import sys
+
+# Ensure models/ and pipelines/ are importable on Streamlit Community Cloud
+# (on Replit, PYTHONPATH is set in the workflow; on Cloud it is not)
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (os.path.join(_repo_root, "models"), os.path.join(_repo_root, "pipelines")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
